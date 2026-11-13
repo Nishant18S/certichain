@@ -5,7 +5,6 @@ const MySQLStore=require('express-mysql-session')(session);
 const {rateLimit}=require('express-rate-limit');
 const multer=require('multer'),crypto=require('crypto'),fs=require('fs'),path=require('path'),bcrypt=require('bcryptjs'),QR=require('qrcode');
 const {Gateway,Wallets}=require('fabric-network');
-const nodemailer=require('nodemailer');
 const db=require('./config/db');
 const {requireAuth,requireAdmin}=require('./middleware/auth');
 const app=express(),PORT=Number(process.env.PORT||3000);
@@ -16,19 +15,33 @@ const WALLET=process.env.FABRIC_WALLET_PATH||path.join(__dirname,'wallet');
 const STORE=path.join(__dirname,'storage','certificates');
 const FABRIC_ENABLED=String(process.env.FABRIC_ENABLED||'true').toLowerCase()!=='false';
 
-// PASSWORD_RESET_IMPLEMENTATION
-const mailer=nodemailer.createTransport({
- host:process.env.SMTP_HOST,
- port:Number(process.env.SMTP_PORT||587),
- secure:String(process.env.SMTP_SECURE).toLowerCase()==='true',
- auth:{
-  user:process.env.SMTP_USER,
-  pass:process.env.SMTP_PASS
- },
- connectionTimeout:10000,
- greetingTimeout:10000,
- socketTimeout:15000
-});
+// PASSWORD_RESET_IMPLEMENTATION (Brevo HTTP API - works on Render free tier, uses HTTPS port 443)
+async function sendEmail({to,toName,subject,text,html}){
+ if(!process.env.BREVO_API_KEY)throw new Error('BREVO_API_KEY is not set');
+ if(!process.env.MAIL_FROM)throw new Error('MAIL_FROM is not set');
+ const r=await fetch('https://api.brevo.com/v3/smtp/email',{
+  method:'POST',
+  headers:{
+   accept:'application/json',
+   'content-type':'application/json',
+   'api-key':process.env.BREVO_API_KEY
+  },
+  body:JSON.stringify({
+   sender:{name:process.env.MAIL_FROM_NAME||'CertiChain',email:process.env.MAIL_FROM},
+   to:[{email:to,name:toName}],
+   subject,
+   textContent:text,
+   htmlContent:html
+  }),
+  signal:AbortSignal.timeout(15000)
+ });
+ if(!r.ok){
+  const err=new Error('Brevo API error '+r.status+': '+(await r.text()));
+  err.code='BREVO_API';
+  err.responseCode=r.status;
+  throw err;
+ }
+}
 const escapeHtml=value=>String(value).replace(/[&<>"']/g,ch=>({
  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
 })[ch]);
@@ -258,9 +271,9 @@ app.post('/api/auth/forgot-password',passwordResetLimiter,async(req,res)=>{
    const safeName=escapeHtml(user.full_name);
 
    try{
-    await mailer.sendMail({
-     from:process.env.MAIL_FROM||process.env.SMTP_USER,
+    await sendEmail({
      to:user.email,
+     toName:user.full_name,
      subject:'Reset your CertiChain student account password',
      text:`Hello ${user.full_name},\n\nA password reset was requested for your CertiChain student account.\n\nUse this link within 15 minutes:\n${resetUrl}\n\nIf you did not request this, you can ignore this email.\n\nCertiChain`,
      html:`<!doctype html><html><body style="margin:0;padding:32px;background:#f5f5f1;font-family:Arial,sans-serif;color:#26364a"><div style="max-width:560px;margin:auto;padding:32px;background:#fff;border:1px solid #d9dddf"><h2 style="color:#172d46">CertiChain</h2><p>Hello ${safeName},</p><p>A password reset was requested for your student account.</p><p style="margin:28px 0"><a href="${resetUrl}" style="display:inline-block;padding:13px 22px;background:#172d46;color:#fff;text-decoration:none">Reset password</a></p><p>This link expires in <strong>15 minutes</strong> and can only be used once.</p><p>If you did not request this, ignore this email. Your password will not change.</p><hr style="border:0;border-top:1px solid #ddd"><small>CertiChain · Academic Certificate Authentication</small></div></body></html>`
@@ -273,11 +286,7 @@ app.post('/api/auth/forgot-password',passwordResetLimiter,async(req,res)=>{
     console.error('Password reset email delivery failed:', {
       message: mailError.message || 'No error message provided',
       code: mailError.code || 'UNKNOWN',
-      command: mailError.command || 'UNKNOWN',
-      responseCode: mailError.responseCode || null,
-      syscall: mailError.syscall || null,
-      address: mailError.address || null,
-      port: mailError.port || null
+      responseCode: mailError.responseCode || null
     });
    }
   }
