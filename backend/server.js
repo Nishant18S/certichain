@@ -270,7 +270,15 @@ app.post('/api/auth/forgot-password',passwordResetLimiter,async(req,res)=>{
      'DELETE FROM password_reset_tokens WHERE token_hash=?',
      [tokenHash]
     );
-    console.error('Password reset email delivery failed:',mailError.message);
+    console.error('Password reset email delivery failed:', {
+      message: mailError.message || 'No error message provided',
+      code: mailError.code || 'UNKNOWN',
+      command: mailError.command || 'UNKNOWN',
+      responseCode: mailError.responseCode || null,
+      syscall: mailError.syscall || null,
+      address: mailError.address || null,
+      port: mailError.port || null
+    });
    }
   }
 
