@@ -91,4 +91,3 @@ Open:
 This is a local academic prototype. Before internet/public deployment add HTTPS, secure cookie settings, CSRF protection, rate limiting, account lockout, password reset, email verification, strict CORS, secret manager, file malware scanning, backups, privacy/legal review, and production-grade storage. The `issuer` identity is held by the backend; admin authentication protects the web API but production deployments should use stronger identity-to-issuer controls and audited authorization.
 
 Pagination is applied by the API after retrieving the chaincode range. This is not ledger-level pagination. The QR code is only a URL pointer; authenticity comes from checking the ledger and matching the PDF hash.
-important
