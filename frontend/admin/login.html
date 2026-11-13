@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101d32">
+<title>Administrator access | CertiChain</title>
+<link rel="stylesheet" href="/assets/app.css">
+  <link rel="stylesheet" href="/assets/theme-academic.css">
+</head>
+<body class="cc-auth-page">
+<header class="cc-header">
+  <a class="cc-brand" href="/"><span class="admin-brand-mark">C</span>CertiChain<span>.</span></a>
+  <nav class="cc-nav"><a href="/">Home</a><a href="/verify/">Verify certificate</a><a href="/student/login.html">Student portal</a></nav>
+</header>
+<main class="auth-layout">
+  <section class="auth-intro">
+    <div class="auth-kicker">INSTITUTIONAL ACCESS</div>
+    <h1>Credential management,<br><em>with confidence.</em></h1>
+    <p>Manage academic records through a secure administrative workspace connected to the CertiChain blockchain ledger.</p>
+    <div class="auth-points"><span>✓</span> Permissioned blockchain records</div>
+    <div class="auth-points"><span>✓</span> Certificate issuance and revocation</div>
+    <div class="auth-points"><span>✓</span> Auditable credential activity</div>
+    <div class="auth-footer-note">CERTICHAIN · ADMINISTRATOR WORKSPACE</div>
+  </section>
+  <section class="auth-card">
+    <div class="auth-card-mark">C</div>
+    <span class="auth-card-kicker">ADMINISTRATOR</span>
+    <h2>Welcome back</h2>
+    <p>Sign in to continue to your workspace.</p>
+    <div id="msg" aria-live="polite"></div>
+    <form id="f">
+      <label for="adminEmail">Email address</label>
+      <input id="adminEmail" class="form-control" name="email" type="email" placeholder="admin@institution.edu" autocomplete="username" required>
+      <label for="adminPassword">Password</label>
+      <input id="adminPassword" class="form-control" name="password" type="password" placeholder="Enter your password" autocomplete="current-password" required>
+      <button class="auth-submit" type="submit">Sign in securely <span>↗</span></button>
+    </form>
+    <div class="auth-switch">Looking for your certificates? <a href="/student/login.html">Student portal</a></div>
+    <div class="auth-secure">🔒 &nbsp; Protected institutional access</div>
+  </section>
+</main>
+<footer class="auth-page-footer">CertiChain · Blockchain-Based Academic Certificate Authentication and Management System</footer>
+<script>
+const form = document.getElementById('f');
+const message = document.getElementById('msg');
+form.addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = form.querySelector('button');
+  button.disabled = true;
+  button.textContent = 'Signing in…';
+  message.innerHTML = '';
+  try {
+    const response = await fetch('/api/auth/login',{
+      method:'POST',
+      credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(Object.fromEntries(new FormData(form)))
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to sign in.');
+    if (!data.user || data.user.role !== 'admin') {
+      await fetch('/api/auth/logout',{method:'POST',credentials:'include'});
+      throw new Error('An administrator account is required.');
+    }
+    location.href = '/admin/';
+  } catch (error) {
+    message.innerHTML = '<div class="auth-error"></div>';
+    message.querySelector('.auth-error').textContent = error.message;
+  } finally {
+    button.disabled = false;
+    button.innerHTML = 'Sign in securely <span>↗</span>';
+  }
+});
+</script>
+<script src="/assets/theme.js"></script>
+</body>
+</html>

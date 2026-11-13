@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#172940">
+<title>Student Dashboard | CertiChain</title>
+<link rel="stylesheet" href="/assets/app.css">
+  <link rel="stylesheet" href="/assets/theme-academic.css">
+</head>
+<body class="cc-student-page">
+
+<header class="cc-header">
+  <a class="cc-brand" href="/">CertiChain<span>.</span></a>
+  <nav class="cc-nav">
+    <a href="/">Home</a>
+    <a href="/verify/">Verify certificate</a>
+    <a href="/student/">My credentials</a>
+    <button type="button" class="student-logout" id="logoutButton">Sign out</button>
+  </nav>
+</header>
+
+<main class="student-dashboard">
+  <section class="student-welcome">
+    <div>
+      <div class="student-kicker">STUDENT WORKSPACE</div>
+      <h1 id="welcomeTitle">Your credentials</h1>
+      <p id="welcomeEmail">Loading your account…</p>
+    </div>
+    <div class="student-welcome-mark">C</div>
+  </section>
+
+  <section class="student-summary">
+    <div class="student-summary-card">
+      <span>ISSUED CREDENTIALS</span>
+      <strong id="totalCount">—</strong>
+      <small>Assigned to your account</small>
+    </div>
+    <div class="student-summary-card">
+      <span>ACTIVE RECORDS</span>
+      <strong id="activeCount">—</strong>
+      <small>Currently active on ledger</small>
+    </div>
+    <div class="student-summary-card">
+      <span>REVOKED RECORDS</span>
+      <strong id="revokedCount">—</strong>
+      <small>Revoked on the blockchain</small>
+    </div>
+  </section>
+
+  <section class="student-credentials">
+    <div class="student-section-heading">
+      <div>
+        <div class="student-kicker">YOUR ACADEMIC RECORDS</div>
+        <h2>My certificates</h2>
+        <p>View, verify and download your issued credentials.</p>
+      </div>
+      <a href="/verify/" class="student-verify-link">Public verification ↗</a>
+    </div>
+
+    <div id="studentMessage" class="student-message" aria-live="polite">Loading your certificates…</div>
+    <div id="certificateList" class="student-certificate-grid"></div>
+  </section>
+</main>
+
+<footer class="auth-page-footer">CertiChain · Blockchain-Based Academic Certificate Authentication and Management System</footer>
+
+<script>
+const list = document.getElementById('certificateList');
+const message = document.getElementById('studentMessage');
+
+async function api(url, options = {}) {
+  const response = await fetch(url, {credentials:'include', ...options});
+  const data = await response.json();
+  if (response.status === 401) {
+    location.href = '/student/login.html';
+    throw new Error('Please sign in again.');
+  }
+  if (!response.ok) throw new Error(data.error || 'Request failed.');
+  return data;
+}
+
+function makeElement(tag, className, content) {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  if (content !== undefined) el.textContent = content;
+  return el;
+}
+
+function renderCertificate(certificate) {
+  const card = makeElement('article', 'student-certificate-card');
+  const top = makeElement('div', 'student-certificate-top');
+  top.append(makeElement('span', 'student-certificate-label', 'ACADEMIC CREDENTIAL'));
+  top.append(makeElement('span', 'student-certificate-symbol', 'C'));
+  card.append(top);
+
+  card.append(makeElement('h3', '', certificate.title || 'Academic Certificate'));
+  card.append(makeElement('p', 'student-institution', certificate.institution || 'Institution not available'));
+  card.append(makeElement('div', 'student-certificate-id', certificate.certificateId || 'ID unavailable'));
+
+  const ledgerAvailable = Boolean(certificate.ledger);
+  const revoked = ledgerAvailable && Boolean(certificate.ledger.revoked);
+  const statusText = !ledgerAvailable ? 'Ledger record unavailable' : revoked ? 'Revoked' : 'Active';
+  const status = makeElement('div', 'student-status ' + (!ledgerAvailable ? 'unknown' : revoked ? 'revoked' : 'active'));
+  status.append(makeElement('span', 'student-status-dot'));
+  status.append(document.createTextNode(statusText));
+  card.append(status);
+
+  const actions = makeElement('div', 'student-certificate-actions');
+
+  const verify = makeElement('a', 'student-action-primary', 'Verify certificate ↗');
+  verify.href = '/verify/?id=' + encodeURIComponent(certificate.certificateId);
+  actions.append(verify);
+
+  if (ledgerAvailable && !revoked) {
+    const download = makeElement('a', 'student-action-secondary', 'Download PDF ↓');
+    download.href = '/api/certificates/' + encodeURIComponent(certificate.certificateId) + '/document';
+    actions.append(download);
+  }
+
+  card.append(actions);
+  return card;
+}
+
+async function init() {
+  try {
+    const me = await api('/api/auth/me');
+
+    if (!me.user) {
+      location.href = '/student/login.html';
+      return;
+    }
+
+    if (me.user.role !== 'student') {
+      location.href = '/admin/';
+      return;
+    }
+
+    document.getElementById('welcomeTitle').textContent = 'Welcome, ' + (me.user.fullName || 'Student');
+    document.getElementById('welcomeEmail').textContent = me.user.email || '';
+
+    const data = await api('/api/student/certificates');
+    const certificates = Array.isArray(data.certificates) ? data.certificates : [];
+
+    const active = certificates.filter(c => c.ledger && !c.ledger.revoked).length;
+    const revoked = certificates.filter(c => c.ledger && c.ledger.revoked).length;
+
+    document.getElementById('totalCount').textContent = certificates.length;
+    document.getElementById('activeCount').textContent = active;
+    document.getElementById('revokedCount').textContent = revoked;
+
+    list.replaceChildren();
+    message.textContent = certificates.length ? '' : 'No certificates have been assigned to this email yet. Contact your institution if you expected a certificate.';
+
+    certificates.forEach(certificate => list.append(renderCertificate(certificate)));
+  } catch (error) {
+    message.textContent = error.message || 'Unable to load your dashboard.';
+  }
+}
+
+document.getElementById('logoutButton').addEventListener('click', async () => {
+  try {
+    await api('/api/auth/logout', {method:'POST'});
+  } finally {
+    location.href = '/student/login.html';
+  }
+});
+
+init();
+</script>
+<script src="/assets/theme.js"></script>
+</body>
+</html>

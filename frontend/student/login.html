@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#172940">
+<title>Student Access | CertiChain</title>
+<link rel="stylesheet" href="/assets/app.css">
+  <link rel="stylesheet" href="/assets/theme-academic.css">
+</head>
+<body class="cc-auth-page student-auth-page">
+
+<header class="cc-header">
+  <a class="cc-brand" href="/">CertiChain<span>.</span></a>
+  <nav class="cc-nav">
+    <a href="/">Home</a>
+    <a href="/verify/">Verify certificate</a>
+    <a href="/student/login.html">Student portal</a>
+    <a href="/admin/login.html">Admin</a>
+  </nav>
+</header>
+
+<main class="auth-layout">
+  <section class="auth-intro">
+    <div class="auth-kicker">STUDENT ACCESS</div>
+    <h1>Your achievements,<br><em>verified for life.</em></h1>
+    <p>Access your academic credentials in one place. View certificate records, verify authenticity on the blockchain and securely download available documents.</p>
+    <div class="auth-points"><span>✓</span> Access your issued certificates</div>
+    <div class="auth-points"><span>✓</span> Verify credentials through blockchain records</div>
+    <div class="auth-points"><span>✓</span> Download available certificate PDFs</div>
+    <div class="auth-footer-note">CERTICHAIN · STUDENT WORKSPACE</div>
+  </section>
+
+  <section class="auth-card student-auth-card">
+    <div class="auth-card-mark">C</div>
+    <span class="auth-card-kicker" id="formKicker">STUDENT ACCOUNT</span>
+    <h2 id="formTitle">Welcome back</h2>
+    <p id="formDescription">Sign in to access your academic credentials.</p>
+
+    <div id="msg" aria-live="polite"></div>
+
+    <div class="student-auth-tabs">
+      <button type="button" id="loginTab" class="active" onclick="setMode(false)">Sign in</button>
+      <button type="button" id="regTab" onclick="setMode(true)">Create account</button>
+    </div>
+
+    <form id="studentForm">
+      <div id="nameWrap" class="student-field" hidden>
+        <label for="fullName">Full name</label>
+        <input id="fullName" class="form-control" name="fullName" autocomplete="name" placeholder="Enter your full name">
+      </div>
+
+      <div id="studentWrap" class="student-field" hidden>
+        <label for="studentId">Student ID <span>(optional)</span></label>
+        <input id="studentId" class="form-control" name="studentId" placeholder="Enter your student ID">
+      </div>
+
+      <div class="student-field">
+        <label for="email">Email address</label>
+        <input id="email" class="form-control" name="email" type="email" autocomplete="username" placeholder="you@example.com" required>
+      </div>
+
+      <div class="student-field">
+        <label for="password">Password</label>
+        <input id="password" class="form-control" name="password" type="password" autocomplete="current-password" placeholder="At least 8 characters" minlength="8" required>
+      </div>
+
+      <div class="student-forgot-row" id="forgotPasswordRow">
+        <a href="/student/forgot-password.html">Forgot password?</a>
+      </div>
+
+      <button class="auth-submit" id="submitButton" type="submit">
+        <span id="submitText">Sign in</span><span>↗</span>
+      </button>
+    </form>
+
+    <div class="auth-switch">Institution administrator? <a href="/admin/login.html">Admin access</a></div>
+    <div class="auth-secure">🔒 &nbsp; Secure student account access</div>
+  </section>
+</main>
+
+<footer class="auth-page-footer">CertiChain · Blockchain-Based Academic Certificate Authentication and Management System</footer>
+
+<script>
+const form = document.getElementById('studentForm');
+const message = document.getElementById('msg');
+const nameWrap = document.getElementById('nameWrap');
+const studentWrap = document.getElementById('studentWrap');
+const fullName = document.getElementById('fullName');
+const studentId = document.getElementById('studentId');
+const submitButton = document.getElementById('submitButton');
+let registering = false;
+
+function showError(text) {
+  message.replaceChildren();
+  const box = document.createElement('div');
+  box.className = 'auth-error';
+  box.textContent = text;
+  message.append(box);
+}
+
+function setMode(value) {
+  registering = value;
+  nameWrap.hidden = !value;
+  studentWrap.hidden = !value;
+  fullName.required = value;
+  document.getElementById('forgotPasswordRow').hidden = value;
+
+  document.getElementById('loginTab').classList.toggle('active', !value);
+  document.getElementById('regTab').classList.toggle('active', value);
+  document.getElementById('formKicker').textContent = value ? 'NEW STUDENT ACCOUNT' : 'STUDENT ACCOUNT';
+  document.getElementById('formTitle').textContent = value ? 'Create your account' : 'Welcome back';
+  document.getElementById('formDescription').textContent = value
+    ? 'Register to access your academic credentials.'
+    : 'Sign in to access your academic credentials.';
+  document.getElementById('submitText').textContent = value ? 'Create student account' : 'Sign in';
+  message.replaceChildren();
+}
+
+form.addEventListener('submit', async event => {
+  event.preventDefault();
+  message.replaceChildren();
+  submitButton.disabled = true;
+  document.getElementById('submitText').textContent = registering ? 'Creating account…' : 'Signing in…';
+
+  try {
+    const response = await fetch('/api/auth/' + (registering ? 'register' : 'login'), {
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(Object.fromEntries(new FormData(form)))
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Unable to complete your request.');
+
+    if (!data.user || data.user.role !== 'student') {
+      await fetch('/api/auth/logout', {method:'POST', credentials:'include'});
+      throw new Error('A student account is required to access this portal.');
+    }
+
+    location.href = '/student/';
+  } catch (error) {
+    showError(error.message || 'Something went wrong. Please try again.');
+  } finally {
+    submitButton.disabled = false;
+    document.getElementById('submitText').textContent = registering ? 'Create student account' : 'Sign in';
+  }
+});
+
+setMode(false);
+</script>
+<script src="/assets/theme.js"></script>
+</body>
+</html>

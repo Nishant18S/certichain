@@ -1,0 +1,37 @@
+node_modules/
+.env
+backend/wallet/*
+!backend/wallet/.gitkeep
+backend/storage/certificates/*
+!backend/storage/certificates/.gitkeep
+*.log
+
+# Environment credentials
+.env
+.env.*
+!.env.example
+
+# Node dependencies
+node_modules/
+
+# Fabric wallet and cryptographic identities
+backend/wallet/*
+!backend/wallet/.gitkeep
+**/keystore/
+**/*_sk
+*.pem
+*.key
+
+# Uploaded certificates
+backend/storage/certificates/*
+!backend/storage/certificates/.gitkeep
+
+# Logs and temporary files
+*.log
+*.tmp
+.DS_Store
+frontend_backup_20261111_142424/
+
+# Hyperledger Fabric wallet credentials
+/backend/wallet/*
+!/backend/wallet/.gitkeep

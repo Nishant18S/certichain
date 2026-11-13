@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#172940">
+<title>Verify Certificate | CertiChain</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<link rel="stylesheet" href="/assets/app.css">
+  <link rel="stylesheet" href="/assets/theme-academic.css">
+</head>
+<body class="cc-public-page">
+
+<header class="cc-header">
+  <a class="cc-brand" href="/">CertiChain<span>.</span></a>
+  <nav class="cc-nav">
+    <a href="/">Home</a>
+    <a href="/verify/">Verify certificate</a>
+    <a href="/student/login.html">Student portal</a>
+    <a href="/admin/login.html">Admin</a>
+  </nav>
+</header>
+
+<main class="public-verification">
+  <section class="public-heading">
+    <div class="student-kicker">OPEN CREDENTIAL VERIFICATION</div>
+    <h1>Verify academic<br><em>credentials with confidence.</em></h1>
+    <p>Check a certificate against its blockchain record. You can search by certificate ID or upload the original PDF to verify its document hash.</p>
+  </section>
+
+  <section class="public-verify-card">
+    <div class="public-card-heading">
+      <div>
+        <div class="student-kicker">CERTIFICATE AUTHENTICATION</div>
+        <h2>Verify a certificate</h2>
+      </div>
+      <div class="public-card-mark">✓</div>
+    </div>
+
+    <form id="verifyForm">
+      <label for="certificateId">Certificate ID</label>
+      <input id="certificateId" class="form-control" type="text" placeholder="e.g. CERT-2026-001" required>
+
+      <div class="public-upload-divider"><span>OPTIONAL DOCUMENT CHECK</span></div>
+
+      <label for="certificatePdf">Upload original certificate PDF</label>
+      <input id="certificatePdf" class="form-control public-file-input" type="file" accept="application/pdf">
+      <small class="public-hint">Upload the original PDF to compare its SHA-256 hash with the blockchain record.</small>
+
+      <button class="public-verify-button" id="verifyButton" type="submit">
+        <span id="verifyButtonText">Verify certificate</span><span>↗</span>
+      </button>
+    </form>
+
+    <div id="verificationResult" class="verification-result" aria-live="polite"></div>
+
+    <div class="public-qr-section">
+      <div>
+        <h3>Certificate QR code</h3>
+        <p>Generate a QR code that links directly to this certificate's public verification page.</p>
+      </div>
+      <button id="qrButton" type="button" class="public-qr-button">Generate QR</button>
+    </div>
+    <div id="qrCode" class="public-qr-output"></div>
+  </section>
+
+  <section class="public-trust-note">
+    <span>BLOCKCHAIN-BACKED RECORDS</span>
+    <p>Verification checks the certificate record maintained on the permissioned blockchain ledger. A recorded certificate and a matching uploaded document are distinct checks.</p>
+  </section>
+</main>
+
+<footer class="auth-page-footer">CertiChain · Blockchain-Based Academic Certificate Authentication and Management System</footer>
+
+<script>
+const idInput = document.getElementById('certificateId');
+const pdfInput = document.getElementById('certificatePdf');
+const result = document.getElementById('verificationResult');
+const verifyButton = document.getElementById('verifyButton');
+const verifyButtonText = document.getElementById('verifyButtonText');
+const qrOutput = document.getElementById('qrCode');
+
+const params = new URLSearchParams(location.search);
+if (params.get('id')) idInput.value = params.get('id');
+
+function addDetail(parent, label, value, mono = false) {
+  const row = document.createElement('div');
+  row.className = 'verification-detail';
+
+  const name = document.createElement('span');
+  name.textContent = label;
+
+  const content = document.createElement('strong');
+  content.textContent = value || '—';
+  if (mono) content.className = 'verification-hash';
+
+  row.append(name, content);
+  parent.append(row);
+}
+
+function showVerification(data) {
+  result.replaceChildren();
+
+  const status = String(data.status || 'ERROR').toUpperCase();
+  const revoked = status === 'REVOKED';
+  const valid = status === 'VALID' || status === 'RECORDED';
+
+  const panel = document.createElement('section');
+  panel.className = 'verification-status-panel ' + (revoked ? 'is-revoked' : valid ? 'is-valid' : 'is-unknown');
+
+  const icon = document.createElement('div');
+  icon.className = 'verification-status-icon';
+  icon.textContent = revoked ? '!' : valid ? '✓' : '?';
+
+  const heading = document.createElement('div');
+  heading.className = 'verification-status-heading';
+
+  const title = document.createElement('span');
+  title.textContent = 'VERIFICATION RESULT';
+
+  const statusText = document.createElement('h3');
+  statusText.textContent = status;
+
+  const description = document.createElement('p');
+  description.textContent = data.message || data.error || (
+    revoked ? 'This certificate has been revoked.' :
+    valid ? 'A matching certificate record was found on the blockchain.' :
+    'The certificate could not be verified.'
+  );
+
+  heading.append(title, statusText, description);
+  panel.append(icon, heading);
+  result.append(panel);
+
+  const record = data.record || data;
+  if (record.certificateId || record.documentHash || record.uploadedHash || record.issuerMspId || record.issuedAt) {
+    const details = document.createElement('div');
+    details.className = 'verification-details';
+    details.append(makeHeading('Certificate record'));
+
+    addDetail(details, 'Certificate ID', record.certificateId || data.certificateId || idInput.value);
+    addDetail(details, 'Issue date', record.issuedAt || data.issuedAt);
+    addDetail(details, 'Issuer', record.issuerMspId || data.issuerMspId);
+    addDetail(details, 'Ledger SHA-256', record.documentHash || data.documentHash, true);
+
+    if (data.uploadedHash) addDetail(details, 'Uploaded PDF SHA-256', data.uploadedHash, true);
+    result.append(details);
+  }
+}
+
+function makeHeading(text) {
+  const heading = document.createElement('h4');
+  heading.textContent = text;
+  return heading;
+}
+
+function showError(text) {
+  result.replaceChildren();
+  const error = document.createElement('div');
+  error.className = 'verification-error';
+  error.textContent = text;
+  result.append(error);
+}
+
+document.getElementById('verifyForm').addEventListener('submit', async event => {
+  event.preventDefault();
+
+  const certificateId = idInput.value.trim();
+  if (!certificateId) {
+    showError('Please enter a certificate ID.');
+    return;
+  }
+
+  verifyButton.disabled = true;
+  verifyButtonText.textContent = 'Verifying…';
+  result.replaceChildren();
+
+  try {
+    let response;
+
+    if (pdfInput.files && pdfInput.files[0]) {
+      const file = pdfInput.files[0];
+      if (file.type !== 'application/pdf') throw new Error('Please upload a PDF document.');
+
+      const formData = new FormData();
+      formData.append('certificateId', certificateId);
+      formData.append('certificate', file);
+
+      response = await fetch('/api/certificates/verify', {
+        method:'POST',
+        body:formData
+      });
+    } else {
+      response = await fetch('/api/public/verify/' + encodeURIComponent(certificateId));
+    }
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || data.message || 'Verification request failed.');
+
+    showVerification(data);
+  } catch (error) {
+    showError(error.message || 'Unable to verify this certificate. Please try again.');
+  } finally {
+    verifyButton.disabled = false;
+    verifyButtonText.textContent = 'Verify certificate';
+  }
+});
+
+document.getElementById('qrButton').addEventListener('click', () => {
+  const certificateId = idInput.value.trim();
+  if (!certificateId) {
+    showError('Enter a certificate ID before generating its QR code.');
+    return;
+  }
+
+  if (typeof QRCode === 'undefined') {
+    showError('QR code library could not be loaded. Check your internet connection and try again.');
+    return;
+  }
+
+  qrOutput.replaceChildren();
+  new QRCode(qrOutput, {
+    text: location.origin + '/verify/?id=' + encodeURIComponent(certificateId),
+    width:190,
+    height:190,
+    correctLevel:QRCode.CorrectLevel.M
+  });
+});
+
+if (params.get('id')) {
+  document.getElementById('verifyForm').requestSubmit();
+}
+</script>
+<script src="/assets/theme.js"></script>
+</body>
+</html>

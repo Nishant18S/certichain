@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#101d32">
+<title>Administration | CertiChain</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="stylesheet" href="/assets/app.css">
+  <link rel="stylesheet" href="/assets/theme-academic.css">
+</head>
+<body class="cc-admin">
+
+<header class="cc-header">
+  <a class="cc-brand" href="/"><span class="admin-brand-mark">C</span>CertiChain<span>.</span></a>
+  <nav class="cc-nav">
+    <a href="/">Home</a>
+    <a href="/verify/">Public verification</a>
+    <a href="/student/">Student portal</a>
+    <a class="cc-nav-primary" href="#" onclick="logout();return false;">Sign out ↗</a>
+  </nav>
+</header>
+
+<div class="admin-layout">
+  <aside class="admin-sidebar">
+    <div class="sidebar-label">WORKSPACE</div>
+    <a class="sidebar-link active" href="#dashboard"><span>▦</span> Overview</a>
+    <a class="sidebar-link" href="#issue"><span>＋</span> Issue certificate</a>
+    <a class="sidebar-link" href="#registry"><span>▤</span> Certificate registry</a>
+    <a class="sidebar-link" href="#audit"><span>◷</span> Audit explorer</a>
+    <div class="sidebar-bottom">
+      <div class="sidebar-secure"> <span>✓</span><div><b>Secure workspace</b><small>Fabric-connected ledger</small></div></div>
+      <button class="sidebar-logout" onclick="logout()">Sign out <span>↗</span></button>
+    </div>
+  </aside>
+
+  <main class="admin-main">
+    <div class="admin-welcome">
+      <div>
+        <div class="admin-eyebrow">CERTICHAIN / ADMINISTRATION</div>
+        <h1>Dashboard overview</h1>
+        <p>Monitor academic credentials and manage blockchain records.</p>
+      </div>
+      <div class="admin-user"><span class="admin-avatar">A</span><div><b>Administrator</b><small id="who">Checking session…</small></div></div>
+    </div>
+
+    <div id="msg" aria-live="polite"></div>
+
+    <section id="dashboard" class="admin-stats">
+      <article class="stat-card"><div class="stat-top"><span>Total certificates</span><span class="stat-symbol">▤</span></div><strong id="total">—</strong><small>Recorded on the ledger</small></article>
+      <article class="stat-card"><div class="stat-top"><span>Active credentials</span><span class="stat-symbol">✓</span></div><strong id="active">—</strong><small>Currently valid records</small></article>
+      <article class="stat-card"><div class="stat-top"><span>Revoked credentials</span><span class="stat-symbol">⊘</span></div><strong id="revoked">—</strong><small>Revocation recorded</small></article>
+      <article class="stat-card"><div class="stat-top"><span>Student mappings</span><span class="stat-symbol">◎</span></div><strong id="mapped">—</strong><small>Linked student accounts</small></article>
+    </section>
+
+    <section class="admin-chart-grid">
+      <article class="admin-panel">
+        <div class="panel-heading"><div><span>LEDGER ACTIVITY</span><h2>Certificate issuance</h2></div></div>
+        <div class="chart-wrap"><canvas id="monthly"></canvas></div>
+      </article>
+      <article class="admin-panel">
+        <div class="panel-heading"><div><span>CURRENT DISTRIBUTION</span><h2>Certificate status</h2></div></div>
+        <div class="chart-wrap chart-doughnut"><canvas id="statusChart"></canvas></div>
+      </article>
+    </section>
+
+    <section id="issue" class="admin-panel admin-section">
+      <div class="panel-heading">
+        <div><span>NEW CREDENTIAL</span><h2>Issue a certificate</h2><p>Register a certificate and securely store its original PDF.</p></div>
+        <span class="panel-index">01</span>
+      </div>
+      <form id="issueForm" class="issue-form">
+        <label>Certificate ID<input class="form-control" name="certificateId" placeholder="e.g. CERT-2026-005" required></label>
+        <label>Student email<input class="form-control" name="studentEmail" type="email" placeholder="student@example.com" required></label>
+        <label>Certificate title<input class="form-control" name="title" placeholder="Bachelor of Computer Science" required></label>
+        <label>Institution<input class="form-control" name="institution" placeholder="Institution name" required></label>
+        <label class="file-field">Original certificate PDF<input class="form-control" name="certificate" type="file" accept="application/pdf" required></label>
+        <div class="issue-submit"><span>PDF document · SHA-256 integrity record</span><button class="cc-admin-button" type="submit">Issue certificate <b>↗</b></button></div>
+      </form>
+    </section>
+
+    <section id="registry" class="admin-panel admin-section">
+      <div class="panel-heading">
+        <div><span>RECORD MANAGEMENT</span><h2>Certificate registry</h2><p>Search, review and manage issued credentials.</p></div>
+        <button class="cc-quiet-button" type="button" onclick="load()">↻ Refresh</button>
+      </div>
+      <div class="registry-filters">
+        <input id="search" class="form-control" placeholder="Search certificate ID or issuer">
+        <select id="filter" class="form-select"><option value="all">All statuses</option><option value="active">Active</option><option value="revoked">Revoked</option></select>
+        <button class="cc-admin-button" type="button" onclick="registry()">Search records</button>
+      </div>
+      <div class="table-responsive">
+        <table class="table admin-table">
+          <thead><tr><th>Certificate ID</th><th>Issue date</th><th>Ledger status</th><th>Actions</th></tr></thead>
+          <tbody id="rows"><tr><td colspan="4">Loading certificate records…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="audit" class="admin-panel admin-section">
+      <div class="panel-heading"><div><span>ACTIVITY LOG</span><h2>Audit explorer</h2><p>Application audit notes associated with certificate actions.</p></div><span class="panel-index">02</span></div>
+      <div class="audit-note">Application audit notes are shown below. Use a certificate's history endpoint to inspect its Fabric transaction history.</div>
+      <div id="events" class="audit-events">Loading activity…</div>
+    </section>
+
+    <footer class="admin-footer">CertiChain · Blockchain-Based Academic Certificate Authentication and Management System</footer>
+  </main>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let monthlyChart = null;
+let statusChart = null;
+
+function escapeHTML(value) {
+  return String(value ?? '').replace(/[&<>"']/g, c => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  }[c]));
+}
+
+async function api(url, options = {}) {
+  const response = await fetch(url, {credentials:'include', ...options});
+  const data = await response.json();
+  if (response.status === 401) {
+    location.href = '/admin/login.html';
+    throw new Error('Your session has expired. Please sign in again.');
+  }
+  if (!response.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
+
+function msg(message, kind = 'success') {
+  $('msg').innerHTML = `<div class="admin-alert ${kind === 'danger' ? 'error' : 'success'}">${escapeHTML(message)}</div>`;
+}
+
+function renderCharts(analytics) {
+  const labels = analytics.monthly.map(x => x.month);
+  const values = analytics.monthly.map(x => x.count);
+
+  if (monthlyChart) {
+    monthlyChart.data.labels = labels;
+    monthlyChart.data.datasets[0].data = values;
+    monthlyChart.update();
+  } else {
+    monthlyChart = new Chart($('monthly'), {
+      type:'bar',
+      data:{labels,datasets:[{
+        label:'Certificates issued',
+        data:values,
+        backgroundColor:'#c6a66a',
+        borderRadius:4,
+        maxBarThickness:34
+      }]},
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{
+          x:{grid:{display:false},ticks:{color:'#788493'}},
+          y:{beginAtZero:true,ticks:{precision:0,color:'#788493'},grid:{color:'#edf0f3'}}
+        }
+      }
+    });
+  }
+
+  const statusValues = [analytics.status.active, analytics.status.revoked];
+  if (statusChart) {
+    statusChart.data.datasets[0].data = statusValues;
+    statusChart.update();
+  } else {
+    statusChart = new Chart($('statusChart'), {
+      type:'doughnut',
+      data:{
+        labels:['Active','Revoked'],
+        datasets:[{data:statusValues,backgroundColor:['#557a62','#bd7770'],borderWidth:0,hoverOffset:5}]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,cutout:'72%',
+        plugins:{legend:{position:'bottom',labels:{usePointStyle:true,boxWidth:8,padding:20,color:'#526071'}}}
+      }
+    });
+  }
+}
+
+async function registry() {
+  const query = new URLSearchParams({search:$('search').value,status:$('filter').value});
+  const data = await api('/api/certificates?' + query);
+  const records = data.certificates || [];
+
+  if (!records.length) {
+    $('rows').innerHTML = '<tr><td colspan="4" class="empty-cell">No matching certificates found.</td></tr>';
+    return;
+  }
+
+  $('rows').innerHTML = records.map(c => {
+    const id = String(c.certificateId || '');
+    const safeId = escapeHTML(id);
+    const encoded = encodeURIComponent(id);
+    const revoked = Boolean(c.revoked);
+    return `<tr>
+      <td><span class="registry-id">${safeId}</span></td>
+      <td>${escapeHTML(c.issuedAt ? new Date(c.issuedAt).toLocaleString() : '—')}</td>
+      <td><span class="status-pill ${revoked ? 'revoked' : 'active'}">${revoked ? 'Revoked' : 'Active'}</span></td>
+      <td class="registry-actions">
+        <a href="/api/certificates/${encoded}/history" target="_blank" rel="noopener">History</a>
+        <a href="/verify/?id=${encoded}">Verify</a>
+        ${revoked ? '' : `<button type="button" data-revoke="${escapeHTML(encoded)}">Revoke</button>`}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+$('rows').addEventListener('click', event => {
+  const button = event.target.closest('[data-revoke]');
+  if (button) revoke(decodeURIComponent(button.dataset.revoke));
+});
+
+async function revoke(id) {
+  if (!confirm('Are you sure you want to revoke certificate ' + id + '?')) return;
+  try {
+    await api('/api/certificates/revoke', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({certificateId:id})
+    });
+    msg('Certificate revocation recorded on the Fabric ledger.');
+    await load();
+  } catch (error) {
+    msg(error.message,'danger');
+  }
+}
+
+async function load() {
+  try {
+    const me = await api('/api/auth/me');
+    if (!me.user || me.user.role !== 'admin') {
+      location.href = '/admin/login.html';
+      return;
+    }
+
+    $('who').textContent = me.user.email;
+    const stats = await api('/api/dashboard/stats');
+    $('total').textContent = stats.statistics.totalCertificates;
+    $('active').textContent = stats.statistics.activeCertificates;
+    $('revoked').textContent = stats.statistics.revokedCertificates;
+    $('mapped').textContent = stats.statistics.mappedCertificates;
+
+    const analytics = await api('/api/admin/analytics');
+    renderCharts(analytics);
+    await registry();
+
+    const audit = await api('/api/admin/audit');
+    $('events').innerHTML = (audit.events || []).map(event => `
+      <div class="audit-event">
+        <span class="audit-dot"></span>
+        <div><b>${escapeHTML(event.action)}</b><p>${escapeHTML(event.certificateId)} · ${escapeHTML(event.actor || 'system')}</p></div>
+        <time>${escapeHTML(new Date(event.createdAt).toLocaleString())}</time>
+      </div>
+    `).join('') || '<p class="empty-cell">No audit events recorded yet.</p>';
+  } catch (error) {
+    msg(error.message,'danger');
+  }
+}
+
+$('issueForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = $('issueForm').querySelector('button[type="submit"]');
+  button.disabled = true;
+  button.textContent = 'Issuing…';
+  try {
+    const data = await api('/api/certificates/issue', {
+      method:'POST',
+      body:new FormData($('issueForm'))
+    });
+    msg('Certificate ' + data.certificate.certificateId + ' issued successfully.');
+    $('issueForm').reset();
+    await load();
+  } catch (error) {
+    msg(error.message,'danger');
+  } finally {
+    button.disabled = false;
+    button.innerHTML = 'Issue certificate <b>↗</b>';
+  }
+});
+
+async function logout() {
+  try { await api('/api/auth/logout',{method:'POST'}); }
+  finally { location.href = '/admin/login.html'; }
+}
+
+load();
+</script>
+<script src="/assets/theme.js"></script>
+</body>
+</html>
