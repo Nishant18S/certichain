@@ -14,6 +14,7 @@ const ORG=process.env.FABRIC_ORG_PATH||path.resolve(__dirname,'../../../fabric-s
 const CCP=process.env.FABRIC_CCP_PATH||path.join(ORG,'connection-org1.json');
 const WALLET=process.env.FABRIC_WALLET_PATH||path.join(__dirname,'wallet');
 const STORE=path.join(__dirname,'storage','certificates');
+const FABRIC_ENABLED=String(process.env.FABRIC_ENABLED||'true').toLowerCase()!=='false';
 
 // PASSWORD_RESET_IMPLEMENTATION
 const mailer=nodemailer.createTransport({
@@ -23,7 +24,10 @@ const mailer=nodemailer.createTransport({
  auth:{
   user:process.env.SMTP_USER,
   pass:process.env.SMTP_PASS
- }
+ },
+ connectionTimeout:10000,
+ greetingTimeout:10000,
+ socketTimeout:15000
 });
 const escapeHtml=value=>String(value).replace(/[&<>"']/g,ch=>({
  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
@@ -47,7 +51,7 @@ app.use(session({
  saveUninitialized:false,
  cookie:{
   httpOnly:true,
-  sameSite:'lax',
+  sameSite:process.env.COOKIE_SAMESITE||'lax',
   secure:process.env.NODE_ENV==='production',
   maxAge:8*60*60*1000
  }
@@ -110,7 +114,90 @@ const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:8*1024*1024
 const validId=id=>typeof id==='string'&&/^[A-Za-z0-9_-]{4,64}$/.test(id);
 const hash=b=>'0x'+crypto.createHash('sha256').update(b).digest('hex');
 const parse=b=>JSON.parse(b.toString());
+
+// ---------- Simulated ledger (used only when FABRIC_ENABLED=false) ----------
+async function ensureLedgerTables(){
+ await db.execute(`CREATE TABLE IF NOT EXISTS ledger_certificates(
+  certificate_id VARCHAR(64) PRIMARY KEY,
+  document_hash VARCHAR(80) NOT NULL,
+  issuer_msp_id VARCHAR(40) NOT NULL,
+  issued_at VARCHAR(40) NOT NULL,
+  revoked TINYINT(1) NOT NULL DEFAULT 0,
+  revoked_at VARCHAR(40) NULL
+ )`);
+ await db.execute(`CREATE TABLE IF NOT EXISTS ledger_history(
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  certificate_id VARCHAR(64) NOT NULL,
+  tx_id VARCHAR(80) NOT NULL,
+  ts VARCHAR(40) NOT NULL,
+  value TEXT NOT NULL,
+  INDEX idx_ledger_history_cert(certificate_id)
+ )`);
+}
+const rowToCert=r=>({
+ certificateId:r.certificate_id,
+ documentHash:r.document_hash,
+ issuerMspId:r.issuer_msp_id,
+ issuedAt:r.issued_at,
+ revoked:!!r.revoked,
+ ...(r.revoked_at?{revokedAt:r.revoked_at}:{})
+});
+async function simRead(id){
+ const [rows]=await db.execute('SELECT * FROM ledger_certificates WHERE certificate_id=?',[id]);
+ return rows.length?rowToCert(rows[0]):null;
+}
+async function simHistory(cert){
+ await db.execute('INSERT INTO ledger_history(certificate_id,tx_id,ts,value) VALUES(?,?,?,?)',
+  [cert.certificateId,crypto.randomBytes(32).toString('hex'),new Date().toISOString(),JSON.stringify(cert)]);
+}
+async function simLedger(fn,args){
+ const out=v=>Buffer.from(JSON.stringify(v));
+ if(fn==='IssueCertificate'){
+  const [id,docHash]=args;
+  if(await simRead(id))throw new Error('Certificate '+id+' already exists');
+  const issuedAt=new Date().toISOString();
+  await db.execute('INSERT INTO ledger_certificates(certificate_id,document_hash,issuer_msp_id,issued_at,revoked) VALUES(?,?,?,?,0)',[id,docHash,'Org1MSP',issuedAt]);
+  const cert=await simRead(id);await simHistory(cert);return out(cert);
+ }
+ if(fn==='RevokeCertificate'){
+  const [id]=args;const cur=await simRead(id);
+  if(!cur)throw new Error('Certificate '+id+' does not exist');
+  if(cur.revoked)throw new Error('Certificate '+id+' is already revoked');
+  await db.execute('UPDATE ledger_certificates SET revoked=1,revoked_at=? WHERE certificate_id=?',[new Date().toISOString(),id]);
+  const cert=await simRead(id);await simHistory(cert);return out(cert);
+ }
+ if(fn==='ReadCertificate'){
+  const cert=await simRead(args[0]);
+  if(!cert)throw new Error('Certificate '+args[0]+' does not exist');
+  return out(cert);
+ }
+ if(fn==='VerifyCertificate'){
+  const [id,docHash]=args;const cert=await simRead(id);
+  if(!cert)return out({exists:false,valid:false,revoked:false,hashMatches:false,message:'Certificate record not found.'});
+  const hashMatches=cert.documentHash.toLowerCase()===String(docHash).toLowerCase();
+  const valid=!cert.revoked&&hashMatches;
+  return out({exists:true,valid,revoked:cert.revoked,hashMatches,certificate:cert,
+   message:cert.revoked?'This certificate has been revoked.':hashMatches?'Certificate is valid. The document hash matches the ledger record.':'Document hash does not match the ledger record.'});
+ }
+ if(fn==='GetAllCertificates'){
+  const [rows]=await db.execute('SELECT * FROM ledger_certificates');
+  return out(rows.map(rowToCert));
+ }
+ if(fn==='GetCertificateHistory'){
+  const [rows]=await db.execute('SELECT tx_id,ts,value FROM ledger_history WHERE certificate_id=? ORDER BY id ASC',[args[0]]);
+  if(!rows.length)throw new Error('Certificate '+args[0]+' does not exist');
+  return out(rows.map(r=>({txId:r.tx_id,timestamp:r.ts,isDelete:false,value:JSON.parse(r.value)})));
+ }
+ throw new Error('Unsupported ledger function: '+fn);
+}
+
 async function fabric(fn){
+ if(!FABRIC_ENABLED){
+  return fn({
+   submitTransaction:(f,...a)=>simLedger(f,a),
+   evaluateTransaction:(f,...a)=>simLedger(f,a)
+  });
+ }
  if(!fs.existsSync(CCP))throw new Error('Fabric connection profile not found: '+CCP);
  const ccp=JSON.parse(fs.readFileSync(CCP,'utf8')),wallet=await Wallets.newFileSystemWallet(WALLET);
  if(!await wallet.get('appUser'))throw new Error('appUser missing in Fabric wallet. Configure FABRIC_WALLET_PATH.');
@@ -120,7 +207,7 @@ async function fabric(fn){
 async function all(){const b=await fabric(c=>c.evaluateTransaction('GetAllCertificates'));return parse(b);}
 async function audit(user,action,id,details={}){await db.execute('INSERT INTO audit_notes(actor_user_id,action,certificate_id,details) VALUES(?,?,?,?)',[user?.id||null,action,id,JSON.stringify(details)]);}
 
-app.get('/api/health',(req,res)=>res.json({status:'ok',application:'CertiChain API',channel:CHANNEL,chaincode:CHAINCODE}));
+app.get('/api/health',(req,res)=>res.json({status:'ok',application:'CertiChain API',channel:CHANNEL,chaincode:CHAINCODE,ledger:FABRIC_ENABLED?'hyperledger-fabric':'simulated-mysql'}));
 app.get('/api/auth/me',(req,res)=>res.json({user:req.session.user||null}));
 app.post('/api/auth/register',registerLimiter,async(req,res)=>{try{
  const name=String(req.body.fullName||'').trim(),email=String(req.body.email||'').trim().toLowerCase(),password=String(req.body.password||''),studentId=String(req.body.studentId||'').trim();
@@ -357,9 +444,10 @@ app.get('/api/public/qr/:id',publicReadLimiter,async(req,res)=>{try{const id=req
 app.get('/api/admin/audit',requireAdmin,async(req,res)=>{const [rows]=await db.execute('SELECT a.id,a.action,a.certificate_id AS certificateId,a.details,a.created_at AS createdAt,u.email AS actor FROM audit_notes a LEFT JOIN users u ON u.id=a.actor_user_id ORDER BY a.created_at DESC LIMIT 100');res.json({events:rows});});
 app.get('/api/admin/analytics',requireAdmin,async(req,res)=>{try{const a=await all();const byMonth={};for(const x of a){const k=String(x.issuedAt).slice(0,7);byMonth[k]=(byMonth[k]||0)+1;}res.json({monthly:Object.entries(byMonth).sort().map(([month,count])=>({month,count})),status:{active:a.filter(x=>!x.revoked).length,revoked:a.filter(x=>x.revoked).length}});}catch(e){res.status(500).json({error:e.message});}});
 app.use((err,req,res,next)=>res.status(400).json({error:err.message||'Request failed'}));
-sessionStore.onReady().then(()=>{
- app.listen(PORT,()=>console.log(`CertiChain running at http://localhost:${PORT}`));
+sessionStore.onReady().then(async()=>{
+ if(!FABRIC_ENABLED)await ensureLedgerTables();
+ app.listen(PORT,()=>console.log(`CertiChain running on port ${PORT} (ledger: ${FABRIC_ENABLED?'fabric':'simulated'})`));
 }).catch(error=>{
- console.error('MySQL session store initialization failed:',error.message);
+ console.error('Startup failed:',error.message);
  process.exit(1);
 });
