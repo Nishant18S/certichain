@@ -88,6 +88,22 @@ Open:
 9. Revoke a disposable test certificate; public verification displays `REVOKED`.
 
 ## Security / academic prototype limitations
-This is a local academic prototype. Before internet/public deployment add HTTPS, secure cookie settings, CSRF protection, rate limiting, account lockout, password reset, email verification, strict CORS, secret manager, file malware scanning, backups, privacy/legal review, and production-grade storage. The `issuer` identity is held by the backend; admin authentication protects the web API but production deployments should use stronger identity-to-issuer controls and audited authorization.
+
+This is an academic prototype with student password recovery implemented.
+
+Student password recovery includes:
+- Secure, randomly generated reset tokens stored as SHA-256 hashes.
+- 15-minute token expiration.
+- Single-use reset links.
+- Bcrypt password hashing.
+- Student-only password recovery.
+- Rate limiting on password recovery and password update endpoints.
+- Invalidation of existing student sessions after a successful password reset.
+
+Configure SMTP credentials and `PUBLIC_BASE_URL` before enabling password recovery in a deployed environment. Verify email delivery using the selected production email provider.
+
+Before public production deployment, additional security and operational work remains: HTTPS, secure cookie configuration, CSRF protection, account lockout, email verification, strict CORS, secret management, file malware scanning, backups, privacy/legal review, and production-grade storage.
+
+The `issuer` identity is held by the backend. Admin authentication protects the web API, but production deployments should use stronger identity-to-issuer controls and audited authorization.
 
 Pagination is applied by the API after retrieving the chaincode range. This is not ledger-level pagination. The QR code is only a URL pointer; authenticity comes from checking the ledger and matching the PDF hash.
